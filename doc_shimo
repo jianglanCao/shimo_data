@@ -1,0 +1,106 @@
+
+//文档7.30-10.28 重度用户-版本-编辑周数
+
+SELECT aaa.id, aaa.version, bbb.weeks
+FROM (
+	SELECT id
+		, CASE 
+			WHEN is_seat = 1 THEN '付费企业版'
+			WHEN id IN (
+				SELECT target_id
+				FROM smhub_2018_11_02.membership_base
+				WHERE target_type = 1
+					AND category = 1
+					AND is_official = 1
+			) THEN '付费高级版'
+			ELSE '免费版本'
+		END AS version
+	FROM smhub_2018_11_02.users_base
+	WHERE id IN (
+		SELECT user_id
+		FROM smhub_2018_11_02.heavy_docusers
+	)
+) aaa
+LEFT OUTER JOIN (
+	SELECT id, weeks
+	FROM smhub_2018_11_02.doc_edit_weeks
+) bbb
+ON aaa.id = bbb.id
+
+
+//文档重度用户id-heavy_docusers
+
+SELECT DISTINCT distinct_id
+FROM (
+	SELECT weekofyear(date) AS week, distinct_id, COUNT(DISTINCT fileID) AS num
+	FROM events
+	WHERE (date BETWEEN '2018-07-30' AND '2018-10-28'
+		AND fileType = '新文档'
+		AND distinct_id REGEXP '^\\d+$'
+		AND event = 'edit')
+	GROUP BY week, distinct_id
+	HAVING num >= 3
+	UNION
+	SELECT weekofyear(date) AS week, distinct_id, COUNT(distinct $url) AS num
+	FROM events
+	WHERE (date BETWEEN '2018-07-30' AND '2018-10-28'
+		AND distinct_id REGEXP '^\\d+$'
+		AND event = '$pageview'
+		AND $url_path LIKE '/doc%')
+	GROUP BY week, distinct_id
+	HAVING num >= 5
+)aaaa
+
+//文档编辑用户-编辑周数-doc_edit_users
+
+select distinct_id ,count(distinct week) as weeks
+from
+	(SELECT weekofyear(date) AS week, distinct_id, COUNT(DISTINCT fileID) AS num
+	FROM events
+	WHERE (date BETWEEN '2018-07-30' AND '2018-10-28'
+		AND fileType = '新文档'
+		AND distinct_id REGEXP '^\\d+$'
+		AND event = 'edit')
+	GROUP BY week, distinct_id
+	HAVING num >= 3)bbb
+group by distinct_id
+
+
+
+/**/
+CREATE TABLE doc_candy_v2 AS
+SELECT DISTINCT heavy_users,
+                versions,
+                weeks
+FROM
+  (SELECT heavy_users,
+          CASE
+              WHEN team_users IS NOT NULL THEN '企业用户'
+              WHEN  higher_users IS NOT NULL THEN '付费个人版'
+              ELSE '免费用户'
+          END AS versions
+   FROM
+     (SELECT heavy_users,
+             team_users,
+             higher_users
+      FROM
+        (SELECT heavy.user_id AS heavy_users,
+                aaa.id AS team_users
+         FROM default.heavy_doc heavy
+         LEFT  JOIN
+           (SELECT id
+            FROM users
+            WHERE team_id IS not NULL)aaa ON heavy.user_id=aaa.id) bbb
+      LEFT  JOIN
+        (SELECT target_id AS higher_users
+         FROM default.membership
+         WHERE target_type = 1
+           AND category = 1
+           AND is_official = 1 )ccc ON heavy_users=higher_users)ddd)eee
+LEFT JOIN
+  (SELECT user_id,
+          weeks
+   FROM default.doc_edit_users) fff ON heavy_users =fff.user_id
+
+
+
